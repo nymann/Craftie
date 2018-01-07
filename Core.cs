@@ -1,4 +1,6 @@
-﻿using System.Linq;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 using Craftie.Utilities;
@@ -10,496 +12,172 @@ using PoeHUD.Poe.Components;
 using PoeHUD.Poe.Elements;
 using PoeHUD.Poe.EntityComponents;
 using SharpDX;
+using SharpDX.Direct3D9;
 
 namespace Craftie
 {
     public class Core : BaseSettingsPlugin<Settings>
     {
-        private Thread _crafingThread;
-        private bool _succes;
-        private int _animation;
-        private bool _crafting;
-
-        private int _socketCraftCounter = 0;
-        private int _chromaticCraftCounter = 0;
-        private int _linkCraftCounter = 0;
-        private int _alterationCounter = 0;
-
         public Core()
         {
             PluginName = "Craftie";
         }
 
-        public override void Initialise()
-        {
-            SetupOrClosePlugin();
-            Settings.Enable.OnValueChanged += SetupOrClosePlugin;
-        }
-
-        public override void OnClose()
-        {
-            CloseThreads();
-        }
-
         public override void Render()
         {
-            var path = $"{PluginDirectory}\\images\\";
-            var windowSize = GameController.Window.GetWindowRectangle();
-            var pos = new RectangleF(windowSize.Width / 2 - 100, windowSize.Height - 200, 200, 200);
-
-            if (!_crafting)
+            if (Settings.HotkeyEnabled.Value && !Keyboard.IsKeyToggled(Settings.Hotkey.Value))
             {
                 return;
             }
 
-            if (!_succes)
+            if (Settings.HotkeyEnabled.Value)
             {
-                path += "FeelsBadMan.png";
+                LogMessage($"Craftie: Hotkey currently toggled, press {Settings.Hotkey.Value.ToString()} to disable.", 5);
             }
-            else
+
+            var stashPanel = GameController.Game.IngameState.ServerData.StashPanel;
+            if (!stashPanel.IsVisible)
             {
-                pos.X += _animation;
-                path += "FeelsGoodMan.png";
-                _animation++;
-
-                if (_animation > 400)
-                {
-                    _animation = 0;
-                }
-            }
-            Graphics.DrawPluginImage(path, pos);
-        }
-
-        private void CloseThreads()
-        {
-            if (_crafingThread != null && _crafingThread.IsAlive)
-            {
-                _crafingThread.IsBackground = true;
-            }
-        }
-
-        private void SetupOrClosePlugin()
-        {
-            if (!Settings.Enable.Value)
-            {
-                _animation = 0;
-                _succes = false;
-                _crafting = false;
-
-                CloseThreads();
                 return;
             }
 
-            Settings.CurrencyTab.Max = (int) GameController.Game.IngameState.ServerData.StashPanel.TotalStashes - 1;
-            _crafingThread = new Thread(CraftingThread);
-            _crafingThread.Start();
-        }
+            var craftingItem = CraftingItemFromCurrencyStash();
 
-        private void CraftingThread()
-        {
-            while (!_crafingThread.IsBackground)
+            // If one of the tuple values is null, then they both are, but for completions sake we check both.
+            if (craftingItem.RealStats == null || craftingItem.RealPosition == null)
             {
-                if (Settings.HotkeyEnabled.Value)
-                {
-                    if (Keyboard.IsKeyToggled(Settings.Hotkey.Value) &&
-                        Keyboard.IsKeyPressed(Settings.Hotkey.Value))
-                    {
-                        _crafting = true;
-                    }
-                    else if (!Keyboard.IsKeyToggled(Settings.Hotkey.Value) &&
-                             Keyboard.IsKeyPressed(Settings.Hotkey.Value))
-                    {
-                        _crafting = false;
-                    }
-
-                    if (!_crafting)
-                    {
-                        Thread.Sleep(Constants.WHILE_DELAY);
-                        continue;
-                    }
-                }
-                var item = GetCraftingItem();
-                if (item == null)
-                {
-                    Thread.Sleep(Constants.WHILE_DELAY);
-                    continue;
-                }
-
-                var parent = GetCraftingParent();
-
-                if (!IsItemCraftable(item))
-                {
-                    LogMessage("Item is not craftable.", 1);
-                    Thread.Sleep(1000);
-                    continue;
-                }
-
-                if (Settings.SocketItem.Value)
-                {
-                    SocketItem(item, parent);
-                }
-
-                if (Settings.LinkItem.Value && (DoesItemHaveTheWantedAmountOfSockets() || !Settings.SocketItem.Value))
-                {
-                    LinkItem(item, parent);
-                }
-
-                if (Settings.ChromaticItem.Value && (DoesItemHaveTheWantedAmountOfLinks() || !Settings.LinkItem.Value))
-                {
-                    ChromaticCraft(item, parent);
-                }
-            }
-
-            _crafingThread.Interrupt();
-        }
-
-        private void SocketItem(IEntity item, Element parent)
-        {
-            while (item.GetComponent<Sockets>().NumberOfSockets < Settings.SocketsWanted.Value ||
-                   !Keyboard.IsKeyDown(Settings.Hotkey.Value))
-            {
-                Thread.Sleep(Constants.WHILE_DELAY);
-            }
-        }
-
-
-        private void LinkItem(IEntity item, Element parent)
-        {
-            var sockets = item.GetComponent<Sockets>();
-            const string craftingMaterialName = "Jeweller's Orb";
-            var windowOffset = GameController.Window.GetWindowRectangle().TopLeft;
-
-            // Check to see if the item we want to link doesn't have enough sockets.
-            if (sockets.NumberOfSockets < Settings.LinksWanted.Value)
-            {
-                LogMessage("The number of links wanted, is less than the sockets the item has!\n", 5);
                 return;
             }
 
-            // Transfer crafting material to player inventory, if we don't have any in the inventory already.
-            var doWeHaveCraftingMaterial = CraftingMaterials(craftingMaterialName);
-            if (!doWeHaveCraftingMaterial)
-            {
-                LogMessage("We don't have materials for this!", 1);
-                return;
-            }
-            // Right-click on the crafting material, and press shift.
-            var craftingMaterialElement = GameController.Game.IngameState.IngameUi
-                .InventoryPanel[InventoryIndex.PlayerInventory].VisibleInventoryItems
-                .First(inventoryItem => craftingMaterialName.Equals(GameController.Files.BaseItemTypes.Translate(inventoryItem.Item.Path)
-                    .BaseName));
-            if (craftingMaterialElement == null)
-            {
-                LogMessage("Didn't work out fam.", 1);
-                return;
-            }
+            Craftable(craftingItem);
 
-            Mouse.SetCursorPosAndRightClick(craftingMaterialElement.GetClientRect().Center, windowOffset, Settings.ExtraDelay.Value);
+            #region debug
 
-            Keyboard.KeyDown(Keys.ShiftKey);
-            while (item.GetComponent<Sockets>().LargestLinkSize < Settings.LinksWanted.Value ||
-                   !Keyboard.IsKeyDown(Settings.Hotkey.Value))
-            {
-                // Check if we have crafting materials enough
-                var materialsEnough = CraftingMaterials(craftingMaterialName);
+            /*Graphics.DrawFrame(craftingItem.RealPosition.GetClientRect(), 2, Color.Blue);
 
-                // If we don't, then return a message.
-                if (!materialsEnough)
-                {
-                    LogMessage("We don't have materials enough for this.", 5);
-                    break;
-                }
+            var baseItemType = GameController.Files.BaseItemTypes.Translate(craftingItem.RealStats.Path);
+            LogMessage($"BaseName: {baseItemType.BaseName}. \n" +
+                       $"ClassName: {baseItemType.ClassName}. \n", 5);*/
 
-                // If we do, begin crafting.
-                // TODO: CRAFTING.
-                Thread.Sleep(Constants.WHILE_DELAY);
-            }
-            Keyboard.KeyUp(Keys.ShiftKey);
+            #endregion
         }
 
         /// <summary>
-        /// If there are any of said crafting material in the playerinventory, return true.
-        /// If there isn't check the stash tab.
-        /// If stash tab does contain crafting material, move it to player inventory and return true.
-        /// Else return false.
+        /// Given the number of wanted sockets, links and/or socket colors, is it possible to craft them onto the item?
+        /// If it is then do it.
         /// </summary>
-        /// <param name="craftingMaterialName">The BaseName of the crafting material</param>
+        /// <param name="craftingItem"></param>
         /// <returns></returns>
-        private bool CraftingMaterials(string craftingMaterialName)
+        private bool Craftable((Entity realStats, Element realPosition) craftingItem)
         {
-            // Check Inventory
-            var visibleInventoryItems =
-                GameController.Game.IngameState.IngameUi.InventoryPanel[InventoryIndex.PlayerInventory]
-                    .VisibleInventoryItems;
+            var item = craftingItem.realStats;
+            var rec = craftingItem.realPosition.GetClientRect();
 
-            var inventoryPanelContainsItem = visibleInventoryItems.Any(item => GameController.Files.BaseItemTypes
-                .Translate(item.Item.Path).BaseName.Equals(craftingMaterialName));
-
-            if (inventoryPanelContainsItem)
+            // if the item is corrupted we can't craft upon it.
+            if (IsCorrupted(item))
             {
-                return true;
-            }
-
-            // Check StashPanel
-            var stashTabItems = GameController.Game.IngameState.ServerData.StashPanel.VisibleStash
-                .VisibleInventoryItems;
-
-            var stashTabContainsItem = stashTabItems.Any(item => GameController.Files.BaseItemTypes
-                .Translate(item.Item.Path).BaseName.Equals(craftingMaterialName));
-
-            if (!stashTabContainsItem)
-            {
-                LogMessage($"Can't find {craftingMaterialName}.", 1);
                 return false;
             }
-            LogMessage("StashTab contains item.", 1);
-            var craftingMaterial = stashTabItems.First(item => GameController.Files.BaseItemTypes
-                .Translate(item.Item.Path).BaseName.Equals(craftingMaterialName));
 
-            // Move them to inventory.
-            MoveItemFromStashTabToInventoryPanel(craftingMaterial);
+            // If we want to socket the item.
+            if (Settings.SocketItem.Value)
+            {
+                var sockets = item.GetComponent<Sockets>();
+
+                if (sockets.NumberOfSockets < Settings.SocketsWanted.Value)
+                {
+                    if (CanItemHaveNumberOfSockets(Settings.SocketsWanted.Value, item) &&
+                        DoWeHaveCurrency("Jeweller's Orb"))
+                    {
+                        CraftIt("Jeweller's Orb", rec);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // If we want to link the item.
+            if (Settings.LinkItem.Value)
+            {
+                var sockets = item.GetComponent<Sockets>();
+
+                if (sockets.LargestLinkSize < Settings.LinksWanted.Value)
+                {
+                    if (Settings.LinksWanted.Value <= sockets.NumberOfSockets &&
+                        DoWeHaveCurrency("Orb of Fusing"))
+                    {
+                        CraftIt("Orb of Fusing", rec);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // If we want to recolor the item using Chromatic Orbs
+            if (Settings.ChromaticItem.Value)
+            {
+                // if requirements are not met
+                LogMessage("Coloring is not supporoted.", Constants.WHILE_DELAY);
+                return false;
+            }
+
+
             return true;
         }
 
-        private void MoveItemFromStashTabToInventoryPanel(Element item)
+        /// <summary>
+        /// Takes the desired crafting currency and applies it to the item being crafted upon.
+        /// </summary>
+        /// <param name="craftingCurrencyBaseName"></param>
+        /// <param name="rec"></param>
+        /// <returns>Returns false if there's unexpected behaviour, otherwise true.</returns>
+        private bool CraftIt(string craftingCurrencyBaseName, RectangleF rec)
         {
+            var craftinCurrency = GetCraftingCurrency(craftingCurrencyBaseName);
             var windowOffset = GameController.Window.GetWindowRectangle().TopLeft;
-
-            Keyboard.KeyDown(Keys.ShiftKey);
-            Mouse.SetCursorPosAndLeftClick(item.GetClientRect().Center, windowOffset, Settings.ExtraDelay.Value);
-            Keyboard.KeyUp(Keys.ShiftKey);
-        }
-
-        private void ChromaticCraft(IEntity item, Element parent)
-        {
-            var latency = (int) GameController.Game.IngameState.CurLatency;
-            var sumOfWantedColors = Settings.BlueSocketsWanted.Value +
-                                    Settings.GreenSocketsWanted.Value +
-                                    Settings.RedSocketsWanted.Value;
-
-            var largestLinkSize = item.GetComponent<Sockets>().LargestLinkSize;
-
-            if (sumOfWantedColors > largestLinkSize)
-            {
-                LogMessage($"Item only has {largestLinkSize} links, you want {sumOfWantedColors} linked colors.", 5);
-                Thread.Sleep(latency);
-                return;
-            }
-
-            if (DoesItemHaveTheRWantedColors(item))
-            {
-                Thread.Sleep(latency);
-            }
-        }
-
-
-        private bool DoesItemHaveTheWantedAmountOfSockets()
-        {
-            try
-            {
-                var item = GetCraftingItem();
-
-                var sockets = item.GetComponent<Sockets>();
-
-                return sockets.NumberOfSockets >= Settings.SocketsWanted.Value;
-            }
-            catch
+            if (craftinCurrency == null)
             {
                 return false;
             }
-        }
 
-        private bool DoesItemHaveTheWantedAmountOfLinks()
-        {
-            try
-            {
-                var item = GetCraftingItem();
-
-                var sockets = item.GetComponent<Sockets>();
-
-                return sockets.LargestLinkSize >= Settings.LinksWanted.Value;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool DoesItemHaveTheRWantedColors(IEntity item)
-        {
-            var links = item.GetComponent<Sockets>().Links;
-            return links.Any(current =>
-            {
-                if (current.Length < Settings.LinksWanted.Value)
-                {
-                    return false;
-                }
-                // 1 = Red
-                var redCounter = 0;
-
-                // 2 = Green
-                var greenCounter = 0;
-
-                // 3 = Blue
-                var blueCounter = 0;
-
-                foreach (var socketColor in current.ToList())
-                {
-                    switch (socketColor)
-                    {
-                        case 1:
-                            redCounter++;
-                            break;
-
-                        case 2:
-                            greenCounter++;
-                            break;
-
-                        case 3:
-                            blueCounter++;
-                            break;
-
-                        default:
-                            LogError($"ERROR IN: DoesItemHaveTheRWantedColors, error value: {socketColor}", 5);
-                            break;
-                    }
-                }
-
-                return redCounter >= Settings.RedSocketsWanted.Value &&
-                       greenCounter >= Settings.GreenSocketsWanted.Value &&
-                       blueCounter >= Settings.BlueSocketsWanted.Value;
-            });
-        }
-
-
-        private static bool IsItemCraftable(IEntity item)
-        {
-            if (item == null)
-            {
-                LogMessage("Item is null.", 1);
-                return false;
-            }
-
-            if (!item.GetComponent<Mods>().Identified)
-            {
-                LogMessage("Item is not identified.", 1);
-                return false;
-            }
-
-            if (item.GetComponent<Sockets>().NumberOfSockets == 0)
-            {
-                LogMessage("No sockets!", 1);
-                return false;
-            }
-
-            if (item.GetComponent<Base>().isCorrupted)
-            {
-                LogMessage("Corrupted!", 1);
-                return false;
-            }
-
+            Mouse.SetCursorPosAndRightClick(craftinCurrency.GetClientRect().Center, windowOffset,
+                Settings.ExtraDelay.Value);
+            Thread.Sleep(Constants.INPUT_DELAY);
+            Mouse.SetCursorPosAndLeftClick(rec.Center, windowOffset, Settings.ExtraDelay.Value);
+            Thread.Sleep(100);
             return true;
         }
 
-        private static bool CanItemGetNumberOfSockets(int iLvl, int numberOfSocketsWanted)
+        /// <summary>
+        /// Do we have the requested currency in our currency stash tab?
+        /// </summary>
+        /// <param name="baseName"></param>
+        /// <returns></returns>
+        private bool DoWeHaveCurrency(string baseName)
         {
-            switch (numberOfSocketsWanted)
+            var inventoryItems = GetVisibleInventoryItems();
+            if (inventoryItems == null || inventoryItems.Count == 0)
             {
-                case 1:
-                    if (iLvl < 2)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                case 2:
-                    if (iLvl < 1)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                case 3:
-                    if (iLvl < 2)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                case 4:
-                    if (iLvl < 25)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                case 5:
-                    if (iLvl < 35)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                case 6:
-                    if (iLvl < 50)
-                    {
-                        LogMessage($"Item level is {iLvl}, it can't get {numberOfSocketsWanted} sockets.", 1);
-                        return false;
-                    }
-                    break;
-
-                default:
-                    LogMessage("Number of sockets or links can only be between 1 and 6!\n" +
-                               $"You wanted {numberOfSocketsWanted}!", 1);
-                    return false;
+                return false;
             }
-            return true;
+
+            return inventoryItems.Any(normalInventoryItem => GameController.Files.BaseItemTypes
+                .Translate(normalInventoryItem.Item.Path).BaseName.Equals(baseName));
         }
 
-
-        private Entity GetCraftingItem()
+        /// <summary>
+        /// We are using a Tuple, since the craftingItem it self is falsely positioned, the real position of the craftingItem is it's parent.
+        /// As shown here: https://i.imgur.com/HZO1Cre.png, where the blue triangle is the .RealPosition.GetClientRec(), and the red is the CraftingItem.
+        /// </summary>
+        /// <returns>Tuple with CraftingItem and it's RealPosition, the RealStats entity should be used for checking Mods, and the RealPosition for Mouse movement.</returns>
+        private (Entity RealStats, Element RealPosition) CraftingItemFromCurrencyStash()
         {
             try
             {
-                var stashPanel = GameController.Game.IngameState.ServerData.StashPanel;
-                if (!stashPanel.IsVisible)
-                {
-                    return null;
-                }
-
-                var item = GameController.Game.IngameState.IngameUi.OpenLeftPanel
-                    .Children[2]
-                    .Children[0]
-                    .Children[1]
-                    .Children[1]
-                    .Children[Settings.CurrencyTab.Value]
-                    .Children[0]
-                    .Children[28]
-                    .Children[0].AsObject<NormalInventoryItem>().Item;
-
-                return item;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private Element GetCraftingParent()
-        {
-            try
-            {
-                var stashPanel = GameController.Game.IngameState.ServerData.StashPanel;
-                if (!stashPanel.IsVisible)
-                {
-                    return null;
-                }
-
                 var parent = GameController.Game.IngameState.IngameUi.OpenLeftPanel
                     .Children[2]
                     .Children[0]
@@ -509,7 +187,98 @@ namespace Craftie
                     .Children[0]
                     .Children[28];
 
-                return parent;
+                var item = parent.Children[0].AsObject<NormalInventoryItem>().Item;
+
+                return (item, parent);
+            }
+            catch
+            {
+                return (null, null);
+            }
+        }
+
+        private List<NormalInventoryItem> GetVisibleInventoryItems()
+        {
+            try
+            {
+                return GameController.Game.IngameState.ServerData.StashPanel.VisibleStash.VisibleInventoryItems;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private bool IsCorrupted(IEntity item)
+        {
+            return item.GetComponent<Base>().isCorrupted;
+        }
+
+        private bool CanItemHaveNumberOfSockets(int amount, IEntity item)
+        {
+            var mods = item.GetComponent<Mods>();
+            var iLvl = mods.ItemLevel;
+            var className = GameController.Files.BaseItemTypes.Translate(item.Path).ClassName;
+            // The first limiting factor is item level.
+
+            var numberOfSocketsItemLevel = new Dictionary<int, int>
+            {
+                {1, 1},
+                {2, 1},
+                {3, 2},
+                {4, 25},
+                {5, 35},
+                {6, 50}
+            };
+
+            if (iLvl < numberOfSocketsItemLevel[amount])
+            {
+                LogMessage(
+                    $"Your item needs to be item level {numberOfSocketsItemLevel[amount]} or above for it to have {amount} of sockets.",
+                    Constants.WHILE_DELAY);
+                return false;
+            }
+            // Then the item type (ring, 2h, 1h, boots, ...)
+            if (className.Contains("One Hand") || className.Equals("Shield") || className.Equals("Dagger") ||
+                className.Equals("Wand"))
+            {
+                if (amount > 3)
+                {
+                    LogMessage("You can only have 3 sockets, on this type of item.", Constants.WHILE_DELAY);
+                }
+                return amount <= 3;
+            }
+
+            if (className.Equals("Boots") || className.Equals("Gloves") || className.Equals("Helmet"))
+            {
+                if (amount > 4)
+                {
+                    LogMessage("You can only have 4 sockets, on this type of item.", Constants.WHILE_DELAY);
+                }
+                return amount <= 4;
+            }
+
+            if (className.Contains("Two Hand") || className.Equals("Bow"))
+            {
+                if (amount > 6)
+                {
+                    LogMessage("You can only have 6 sockets, on this type of item.", Constants.WHILE_DELAY);
+                }
+                return amount <= 6;
+            }
+
+            // The remainder can't be socketed.=
+            LogMessage($"{className} can't have sockets!", 5);
+            return false;
+        }
+
+        private NormalInventoryItem GetCraftingCurrency(string baseName)
+        {
+            try
+            {
+                return GameController.Game.IngameState.ServerData.StashPanel.VisibleStash.VisibleInventoryItems.First(
+                    normalInventoryItem => GameController.Files.BaseItemTypes.Translate(normalInventoryItem.Item.Path)
+                        .BaseName.Equals(baseName));
             }
             catch
             {

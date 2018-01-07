@@ -32,10 +32,14 @@ namespace Craftie.Utilities
             return SetCursorPos(x + (int) gameWindow.X, y + (int) gameWindow.Y);
         }
 
+        public static bool SetCursorPos(Vector2 pos, Vector2 gameWindow)
+        {
+            return SetCursorPos((int) pos.X + (int) gameWindow.X, (int) pos.Y + (int) gameWindow.Y);
+        }
+
         public static Point GetCursorPosition()
         {
-            POINT lpPoint;
-            GetCursorPos(out lpPoint);
+            GetCursorPos(out var lpPoint);
             return lpPoint;
         }
 
@@ -84,8 +88,8 @@ namespace Craftie.Utilities
 
         public static void SetCursorPosAndRightClick(Vector2 coords, Vector2 windowOffset, int extraDelay)
         {
-            var posX = (int)(coords.X + windowOffset.X);
-            var posY = (int)(coords.Y + windowOffset.Y);
+            var posX = (int) (coords.X + windowOffset.X);
+            var posY = (int) (coords.Y + windowOffset.Y);
             SetCursorPos(posX, posY);
             Thread.Sleep(MOVEMENT_DELAY + extraDelay);
             RightClick();
