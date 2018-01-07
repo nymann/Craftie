@@ -2,9 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Windows.Forms;
 using Craftie.Utilities;
-using PoeHUD.Models.Enums;
 using PoeHUD.Models.Interfaces;
 using PoeHUD.Plugins;
 using PoeHUD.Poe;
@@ -12,7 +10,6 @@ using PoeHUD.Poe.Components;
 using PoeHUD.Poe.Elements;
 using PoeHUD.Poe.EntityComponents;
 using SharpDX;
-using SharpDX.Direct3D9;
 
 namespace Craftie
 {
@@ -203,6 +200,11 @@ namespace Craftie
             }
         }
 
+
+        /// <summary>
+        /// Gets visible inventory items.
+        /// </summary>
+        /// <returns>a list contains the inventory items or null if we can't get it.</returns>
         private List<NormalInventoryItem> GetVisibleInventoryItems()
         {
             try
@@ -215,11 +217,18 @@ namespace Craftie
             }
         }
 
+
         private bool IsCorrupted(IEntity item)
         {
             return item.GetComponent<Base>().isCorrupted;
         }
 
+        /// <summary>
+        /// Finds out if an item can have the wanted amount of sockets.
+        /// </summary>
+        /// <param name="amount">the desired amount of sockets</param>
+        /// <param name="item">the item to check</param>
+        /// <returns>true if it's possible, otherwise false.</returns>
         private bool CanItemHaveNumberOfSockets(int amount, IEntity item)
         {
             var mods = item.GetComponent<Mods>();
@@ -292,6 +301,11 @@ namespace Craftie
             }
         }
 
+        /// <summary>
+        /// Takes a rectangle, and randomizes the offsets from center in both planes (X,Y), then returns that point as a Vector2.
+        /// </summary>
+        /// <param name="rec">the rectangle you want a randomized center point from.</param>
+        /// <returns>Randomized center point of the given rectangle</returns>
         private Vector2 RandomizedCenterPoint(RectangleF rec)
         {
             var randomized = rec.Center;
