@@ -139,16 +139,22 @@ namespace Craftie
         {
             var craftinCurrency = GetCraftingCurrency(craftingCurrencyBaseName);
             var windowOffset = GameController.Window.GetWindowRectangle().TopLeft;
+            var latency = GameController.Game.IngameState.CurLatency;
             if (craftinCurrency == null)
             {
                 return false;
             }
 
-            Mouse.SetCursorPosAndRightClick(craftinCurrency.GetClientRect().Center, windowOffset,
+            var currencyPos = RandomizedCenterPoint(craftinCurrency.GetClientRect());
+
+            Mouse.SetCursorPosAndRightClick(currencyPos, windowOffset,
                 Settings.ExtraDelay.Value);
             Thread.Sleep(Constants.INPUT_DELAY);
-            Mouse.SetCursorPosAndLeftClick(rec.Center, windowOffset, Settings.ExtraDelay.Value);
-            Thread.Sleep(100);
+
+            var pos = RandomizedCenterPoint(rec);
+
+            Mouse.SetCursorPosAndLeftClick(pos, windowOffset, Settings.ExtraDelay.Value);
+            Thread.Sleep((int) latency * 3);
             return true;
         }
 
@@ -284,6 +290,21 @@ namespace Craftie
             {
                 return null;
             }
+        }
+
+        private Vector2 RandomizedCenterPoint(RectangleF rec)
+        {
+            var randomized = rec.Center;
+            var xOffsetMin = (int) (-1 * rec.Width / 2) + 2;
+            var xOffsetMax = (int) (rec.Width / 2) - 2;
+            var yOffsetMin = (int)(-1 * rec.Height / 2) + 2;
+            var yOffsetMax = (int)(rec.Height / 2) - 2;
+            var random = new Random();
+
+            randomized.X += random.Next(xOffsetMin, xOffsetMax);
+            randomized.Y += random.Next(yOffsetMin, yOffsetMax);
+
+            return randomized;
         }
     }
 }
