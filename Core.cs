@@ -29,12 +29,13 @@ namespace Craftie
 
             if (Settings.HotkeyEnabled.Value)
             {
-                LogMessage($"Craftie: Hotkey currently toggled, press {Settings.Hotkey.Value.ToString()} to disable.", 5);
+                LogMessage($"Craftie: Hotkey currently toggled, press {Settings.Hotkey.Value.ToString()} to disable.", 1);
             }
 
             var stashPanel = GameController.Game.IngameState.ServerData.StashPanel;
             if (!stashPanel.IsVisible)
             {
+                Keyboard.KeyPress(Settings.Hotkey.Value);
                 return;
             }
 
@@ -46,7 +47,10 @@ namespace Craftie
                 return;
             }
 
-            Craftable(craftingItem);
+            if(!Craftable(craftingItem))
+            {
+                Keyboard.KeyPress(Settings.Hotkey.Value);
+            }
 
             #region debug
 
@@ -73,6 +77,13 @@ namespace Craftie
             // if the item is corrupted we can't craft upon it.
             if (IsCorrupted(item))
             {
+                LogMessage("Item is non-craftable (corrupted).", 5);
+                return false;
+            }
+
+            if (!item.GetComponent<Mods>().Identified)
+            {
+                LogMessage("Item is non-craftable (unidentified).", 5);
                 return false;
             }
 
@@ -218,7 +229,7 @@ namespace Craftie
         }
 
 
-        private bool IsCorrupted(IEntity item)
+        private static bool IsCorrupted(IEntity item)
         {
             return item.GetComponent<Base>().isCorrupted;
         }
@@ -273,7 +284,7 @@ namespace Craftie
                 return amount <= 4;
             }
 
-            if (className.Contains("Two Hand") || className.Equals("Bow"))
+            if (className.Contains("Two Hand") || className.Equals("Bow") || className.Contains("Body Armour") || className.Contains("Staff"))
             {
                 if (amount > 6)
                 {
@@ -306,7 +317,7 @@ namespace Craftie
         /// </summary>
         /// <param name="rec">the rectangle you want a randomized center point from.</param>
         /// <returns>Randomized center point of the given rectangle</returns>
-        private Vector2 RandomizedCenterPoint(RectangleF rec)
+        private static Vector2 RandomizedCenterPoint(RectangleF rec)
         {
             var randomized = rec.Center;
             var xOffsetMin = (int) (-1 * rec.Width / 2) + 2;
