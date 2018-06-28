@@ -41,7 +41,7 @@ namespace Craftie
             var craftingItem = CraftingItemFromCurrencyStash();
 
             // If one of the tuple values is null, then they both are, but for completions sake we check both.
-            if (craftingItem.RealStats == null || craftingItem.RealPosition == null)
+            if (craftingItem == null || craftingItem.Address == 0x00 || craftingItem.Item == null || craftingItem.Item.Address == 0x00 )
             {
                 return;
             }
@@ -68,10 +68,10 @@ namespace Craftie
         /// </summary>
         /// <param name="craftingItem"></param>
         /// <returns></returns>
-        private bool Craftable((Entity realStats, Element realPosition) craftingItem)
+        private bool Craftable(NormalInventoryItem craftingItem)
         {
-            var item = craftingItem.realStats;
-            var rec = craftingItem.realPosition.GetClientRect();
+            var item = craftingItem.Item;
+            var rec = craftingItem.GetClientRect();
 
             // if the item is corrupted we can't craft upon it.
             if (IsCorrupted(item))
@@ -185,9 +185,10 @@ namespace Craftie
         /// <summary>
         /// We are using a Tuple, since the craftingItem it self is falsely positioned, the real position of the craftingItem is it's parent.
         /// As shown here: https://i.imgur.com/HZO1Cre.png, where the blue triangle is the .RealPosition.GetClientRec(), and the red is the CraftingItem.
+        /// UPDATE: itemSlot automatically does that by default i.e. PoeHUD is intelligent now.
         /// </summary>
         /// <returns>Tuple with CraftingItem and it's RealPosition, the RealStats entity should be used for checking Mods, and the RealPosition for Mouse movement.</returns>
-        private (Entity RealStats, Element RealPosition) CraftingItemFromCurrencyStash()
+        private NormalInventoryItem CraftingItemFromCurrencyStash()
         {
             Base itemBase = null;
             var inventory = GameController.Game.IngameState.ServerData.StashPanel.GetStashInventoryByIndex(Settings.CurrencyTab.Value);
@@ -195,9 +196,9 @@ namespace Craftie
             {
                 itemBase = itemSlot.Item.GetComponent<Base>();
                 if (itemBase.ItemCellsSizeX > 1 && itemBase.ItemCellsSizeY > 1)
-                    return (itemSlot.Item, itemSlot);
+                    return itemSlot;
             }
-            return (null, null);
+            return null;
         }
 
 
