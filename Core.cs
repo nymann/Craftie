@@ -8,7 +8,6 @@ using PoeHUD.Plugins;
 using PoeHUD.Poe;
 using PoeHUD.Poe.Components;
 using PoeHUD.Poe.Elements;
-using PoeHUD.Poe.EntityComponents;
 using SharpDX;
 
 namespace Craftie
@@ -129,7 +128,7 @@ namespace Craftie
             if (Settings.ChromaticItem.Value)
             {
                 // if requirements are not met
-                LogMessage("Coloring is not supporoted.", Constants.WHILE_DELAY);
+                LogMessage("Coloring is not supporoted yet.", Constants.WHILE_DELAY);
                 return false;
             }
 
@@ -190,25 +189,15 @@ namespace Craftie
         /// <returns>Tuple with CraftingItem and it's RealPosition, the RealStats entity should be used for checking Mods, and the RealPosition for Mouse movement.</returns>
         private (Entity RealStats, Element RealPosition) CraftingItemFromCurrencyStash()
         {
-            try
+            Base itemBase = null;
+            var inventory = GameController.Game.IngameState.ServerData.StashPanel.GetStashInventoryByIndex(Settings.CurrencyTab.Value);
+            foreach (var itemSlot in inventory.VisibleInventoryItems)
             {
-                var parent = GameController.Game.IngameState.IngameUi.OpenLeftPanel
-                    .Children[2]
-                    .Children[0]
-                    .Children[1]
-                    .Children[1]
-                    .Children[Settings.CurrencyTab.Value]
-                    .Children[0]
-                    .Children[28];
-
-                var item = parent.Children[0].AsObject<NormalInventoryItem>().Item;
-
-                return (item, parent);
+                itemBase = itemSlot.Item.GetComponent<Base>();
+                if (itemBase.ItemCellsSizeX > 1 && itemBase.ItemCellsSizeY > 1)
+                    return (itemSlot.Item, itemSlot);
             }
-            catch
-            {
-                return (null, null);
-            }
+            return (null, null);
         }
 
 
