@@ -8,7 +8,6 @@ using PoeHUD.Plugins;
 using PoeHUD.Poe;
 using PoeHUD.Poe.Components;
 using PoeHUD.Poe.Elements;
-using PoeHUD.Poe.EntityComponents;
 using SharpDX;
 
 namespace Craftie
@@ -42,7 +41,7 @@ namespace Craftie
             var craftingItem = CraftingItemFromCurrencyStash();
 
             // If one of the tuple values is null, then they both are, but for completions sake we check both.
-            if (craftingItem.RealStats == null || craftingItem.RealPosition == null)
+            if (craftingItem == null || craftingItem.Address == 0x00 || craftingItem.Item == null || craftingItem.Item.Address == 0x00 )
             {
                 return;
             }
@@ -69,10 +68,10 @@ namespace Craftie
         /// </summary>
         /// <param name="craftingItem"></param>
         /// <returns></returns>
-        private bool Craftable((Entity realStats, Element realPosition) craftingItem)
+        private bool Craftable(NormalInventoryItem craftingItem)
         {
-            var item = craftingItem.realStats;
-            var rec = craftingItem.realPosition.GetClientRect();
+            var item = craftingItem.Item;
+            var rec = craftingItem.GetClientRect();
 
             // if the item is corrupted we can't craft upon it.
             if (IsCorrupted(item))
@@ -129,7 +128,7 @@ namespace Craftie
             if (Settings.ChromaticItem.Value)
             {
                 // if requirements are not met
-                LogMessage("Coloring is not supporoted.", Constants.WHILE_DELAY);
+                LogMessage("Coloring is not supporoted yet.", Constants.WHILE_DELAY);
                 return false;
             }
 
@@ -186,29 +185,20 @@ namespace Craftie
         /// <summary>
         /// We are using a Tuple, since the craftingItem it self is falsely positioned, the real position of the craftingItem is it's parent.
         /// As shown here: https://i.imgur.com/HZO1Cre.png, where the blue triangle is the .RealPosition.GetClientRec(), and the red is the CraftingItem.
+        /// UPDATE: itemSlot automatically does that by default i.e. PoeHUD is intelligent now.
         /// </summary>
         /// <returns>Tuple with CraftingItem and it's RealPosition, the RealStats entity should be used for checking Mods, and the RealPosition for Mouse movement.</returns>
-        private (Entity RealStats, Element RealPosition) CraftingItemFromCurrencyStash()
+        private NormalInventoryItem CraftingItemFromCurrencyStash()
         {
-            try
+            Base itemBase = null;
+            var inventory = GameController.Game.IngameState.ServerData.StashPanel.GetStashInventoryByIndex(Settings.CurrencyTab.Value);
+            foreach (var itemSlot in inventory.VisibleInventoryItems)
             {
-                var parent = GameController.Game.IngameState.IngameUi.OpenLeftPanel
-                    .Children[2]
-                    .Children[0]
-                    .Children[1]
-                    .Children[1]
-                    .Children[Settings.CurrencyTab.Value]
-                    .Children[0]
-                    .Children[28];
-
-                var item = parent.Children[0].AsObject<NormalInventoryItem>().Item;
-
-                return (item, parent);
+                itemBase = itemSlot.Item.GetComponent<Base>();
+                if (itemBase.ItemCellsSizeX > 1 && itemBase.ItemCellsSizeY > 1)
+                    return itemSlot;
             }
-            catch
-            {
-                return (null, null);
-            }
+            return null;
         }
 
 
